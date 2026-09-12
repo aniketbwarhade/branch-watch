@@ -6,89 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install cross-linker (aarch64 Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-
-      - name: Package
-        shell: bash
-        run: |
-          archive="branch-watch-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          cp target/${{ matrix.target }}/release/bw ./bw
-          tar czf "$archive" bw
-          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: '**/*.tar.gz'
-          generate_release_notes: true
-
-  publish-npm:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Update version in package.json
-        run: |
-          VERSION="${{ github.ref_name }}"
-          sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION#v}\"/" npm/package.json
-
-      - name: Publish to npm
-        run: npm publish
-        working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   publish-pypi:
-    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,50 +18,13 @@ jobs:
       - name: Update version in pyproject.toml
         run: |
           VERSION="${{ github.ref_name }}"
-          sed -i "s/^version = \".*\"/version = \"${VERSION#v}\"/" python/pyproject.toml
+          sed -i "s/^version = \".*\"/version = \"${VERSION#v}\"/" pyproject.toml
 
       - name: Build and publish to PyPI
         run: |
           pip install build twine
           python -m build
           twine upload dist/*
-        working-directory: python
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-
-  update-homebrew:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Compute SHA256 for each asset
-        id: sha
-        run: |
-          VERSION="${{ github.ref_name }}"
-          BASE="https://github.com/nuri-yoo/branch-watch/releases/download/${VERSION}"
-          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
-            sha=$(curl -fsSL "${BASE}/branch-watch-${VERSION}-${target}.tar.gz" | shasum -a 256 | awk '{print $1}')
-            echo "${target}=${sha}" >> "$GITHUB_OUTPUT"
-          done
-
-      - uses: actions/checkout@v4
-        with:
-          repository: nuri-yoo/homebrew-tap
-          token: ${{ secrets.GH_PAT }}
-
-      - name: Update formula
-        run: |
-          VERSION="${{ github.ref_name }}"
-          sed -i "s/version \".*\"/version \"${VERSION#v}\"/" Formula/branch-watch.rb
-          sed -i "/aarch64-apple-darwin/{n;s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.aarch64-apple-darwin }}\"/}" Formula/branch-watch.rb
-          sed -i "/x86_64-apple-darwin/{n;s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.x86_64-apple-darwin }}\"/}" Formula/branch-watch.rb
-          sed -i "/aarch64-unknown-linux-gnu/{n;s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.aarch64-unknown-linux-gnu }}\"/}" Formula/branch-watch.rb
-          sed -i "/x86_64-unknown-linux-gnu/{n;s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.x86_64-unknown-linux-gnu }}\"/}" Formula/branch-watch.rb
-
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/branch-watch.rb
-          git commit -m "branch-watch ${{ github.ref_name }}"
-          git push

@@ -3,7 +3,6 @@
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-branch--watch-blue?logo=github)](https://github.com/marketplace/actions/branch-watch)
 [![Release](https://img.shields.io/github/v/release/nuri-yoo/branch-watch)](https://github.com/nuri-yoo/branch-watch/releases)
 [![PyPI](https://img.shields.io/pypi/v/branch-watch?cacheSeconds=0)](https://pypi.org/project/branch-watch/)
-[![npm](https://img.shields.io/npm/v/branch-watch)](https://www.npmjs.com/package/branch-watch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
@@ -11,9 +10,9 @@ If you find this useful, consider leaving a ⭐ — it helps others discover the
 
 ![branch-watch demo](https://github.com/nuri-yoo/branch-watch/blob/main/demo2.gif?raw=true)
 
-**branch-watch** (`bw`) is a fast, single-binary CLI tool that tells you — at a glance — whether your GitHub branches are behind `main`, how far your forks have drifted from upstream, and what pull requests are open. No browser required. Powered by the GitHub REST API.
+**branch-watch** (`bw`) is a Python CLI and local dashboard that tells you — at a glance — whether your GitHub branches are behind `main`, how far your forks have drifted from upstream, and what pull requests are open. No browser is required for the CLI. Powered by the GitHub REST API.
 
-> **TL;DR** — Run `bw forks` to see all your forked repos vs. upstream. Run `bw branches owner/repo` to see every branch vs. the default branch. Run `bw prs owner/repo` for open PRs.
+> **TL;DR** — Run `bw dashboard --repo owner/repo` to open a release control room for one or more repositories. The existing `bw forks`, `bw branches`, and `bw prs` commands remain available for terminal workflows.
 
 ---
 
@@ -118,29 +117,34 @@ $ bw branches owner/repo --json | jq '.[] | select(.behind > 10)'
 | `--json` output | Structured JSON for scripting, CI, and `jq` pipelines |
 | gh CLI auto-detection | No `bw auth` needed if you already use the GitHub CLI |
 | GitHub Actions support | Use as a CI step to fail builds on stale branches |
-| Multi-platform | macOS (Intel + Apple Silicon), Linux (x86_64 + ARM64) |
-| Single binary | No runtime, no dependencies — written in Rust |
+| Multi-platform | Windows, macOS, and Linux with Python 3.8+ |
+| Standard library runtime | No runtime dependencies beyond Python |
 | Ignore list | Hide specific repos from all output with `bw ignore add` |
 | Org support | Check fork sync for an entire GitHub org with `bw forks --org` |
 | Custom base branch | Compare branches against any ref, not just the default |
 | Token-based auth | Works with GitHub PAT via env var, config file, or gh CLI |
+| Release dashboard | Watch production vs. release across multiple repositories with commit and deployment context |
+
+### Release dashboard
+
+Start a local dashboard for one or more repositories:
+
+```sh
+bw dashboard --repo acme/payments --repo acme/catalog
+# opens http://127.0.0.1:8787
+```
+
+To keep a watchlist in your config, add this to `~/.branch-watch.toml`:
+
+```toml
+repos = ["acme/payments", "acme/catalog"]
+```
+
+The dashboard compares each repository's default production branch with `release` (or the first `release/*` branch), and shows ahead/behind counts, the latest commit author/SHA/time, and the latest production deployment. A repository with both release-only commits and production commits missing from release is marked **Hotfix missing**. The **Create Back-Merge PR** control is intentionally staged as the next milestone so teams can review the proposed production-to-release workflow before enabling write access.
 
 ---
 
 ## Installation
-
-### GitHub CLI extension
-
-```sh
-gh extension install nuri-yoo/gh-branch-watch
-gh branch-watch forks
-```
-
-### Homebrew — recommended for macOS and Linux
-
-```sh
-brew install nuri-yoo/tap/branch-watch
-```
 
 ### pip — for Python users
 
@@ -148,37 +152,32 @@ brew install nuri-yoo/tap/branch-watch
 pip install branch-watch
 ```
 
-### npm — for Node.js users
+### Run the Python implementation
 
-```sh
-npm install -g branch-watch
+The complete CLI and dashboard are also available as a Python implementation. It uses only the Python standard library and is the easiest way to run branch-watch on Windows:
+
+```powershell
+cd C:\Users\anike\Desktop\Devops\branch-watch
+py -m pip install -e .
+$env:GITHUB_TOKEN = "ghp_your_token"
+py -m branch_watch dashboard --repo owner/repo
 ```
 
-### Pre-built binaries — direct download
+Open `http://127.0.0.1:8787`. Repeat `--repo owner/other-repo` to watch multiple repositories, or add `repos = ["owner/repo"]` to `~/.branch-watch.toml` and run `py -m branch_watch dashboard`.
 
-Download from the [releases page](https://github.com/nuri-yoo/branch-watch/releases):
+### AI release analysis
 
-| Platform | Binary |
-|----------|--------|
-| macOS Apple Silicon (M1/M2/M3/M4/M5) | `branch-watch-*-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `branch-watch-*-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `branch-watch-*-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux ARM64 | `branch-watch-*-aarch64-unknown-linux-gnu.tar.gz` |
+Configure an OpenAI-compatible provider to enable **Analyze with AI** on each repository card:
 
-```sh
-tar xzf branch-watch-*.tar.gz
-sudo mv bw /usr/local/bin/
+```powershell
+$env:AI_API_KEY = "your_ai_key"
+$env:AI_MODEL = "gpt-4o-mini"
+# Optional for Azure-compatible or local providers:
+# $env:AI_BASE_URL = "https://api.openai.com/v1"
+py -m branch_watch dashboard --repo owner/repo --release-branch release
 ```
 
-### Build from source — for Rust developers
-
-Requires [Rust](https://rustup.rs) 1.80+.
-
-```sh
-git clone https://github.com/nuri-yoo/branch-watch
-cd branch-watch
-cargo install --path .
-```
+The AI receives branch drift, commit summaries, and changed file names. It returns a risk level, impact summary, recommendation, and suggested tests. It does not create a pull request automatically; the user must still approve **Create Back-Merge PR**.
 
 ---
 
@@ -300,9 +299,7 @@ branch-watch uses [semantic versioning](https://semver.org). When a `v*` tag is 
 
 1. Builds binaries for all 4 platforms (macOS arm64/x86_64, Linux x86_64/arm64)
 2. Creates a GitHub Release with attached binaries
-3. Publishes to PyPI (`pip install branch-watch`)
-4. Publishes to npm (`npm install -g branch-watch`)
-5. Updates the Homebrew formula with correct SHA256 checksums
+4. Publishes to PyPI (`pip install branch-watch`)
 
 To release a new version:
 

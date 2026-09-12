@@ -32,16 +32,10 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Install branch-watch
+    - name: Install Python branch-watch
       shell: bash
       run: |
-        version=$(curl -s https://api.github.com/repos/nuri-yoo/branch-watch/releases/latest \
-          | grep '"tag_name"' | cut -d'"' -f4)
-        archive="branch-watch-${version}-x86_64-unknown-linux-gnu.tar.gz"
-        curl -fsSL "https://github.com/nuri-yoo/branch-watch/releases/download/${version}/${archive}" \
-          | tar xz
-        chmod +x bw
-        sudo mv bw /usr/local/bin/bw
+        python -m pip install --quiet branch-watch
 
     - name: Run branch-watch
       id: run
@@ -53,7 +47,7 @@ runs:
         if [[ "${{ inputs.behind_only }}" == "true" ]]; then
           ARGS="$ARGS --behind-only"
         fi
-        result=$(bw $ARGS --json 2>/dev/null || bw $ARGS)
+        result=$(python -m branch_watch $ARGS --json 2>/dev/null || python -m branch_watch $ARGS)
         echo "result=$result" >> $GITHUB_OUTPUT
-        bw $ARGS
+        python -m branch_watch $ARGS
 
